@@ -60,7 +60,48 @@ The current `LeadRow.phone`, `EventRow.phone`, `findLead(phone)`, Calendar descr
 - Store booking codes and Calendar event IDs deterministically from the full provider message reference. In `calendar.ts`, replace `phone` in the event description with a useful “Telegram contact” label or lead reference. Keep the slot availability check and owner confirmation behavior.
 - Keep `OWNER_TELEGRAM_CHAT_ID` separate from prospect records. Compare the inbound private-chat ID to this value *before* creating/updating a lead. Accept `/confirm <code>` and `/decline <code>` only from that ID.
 
-This explicit demo schema is the safer path because the existing Sheet code rejects mismatched headers and currently looks for the phone column at a fixed index.…1486 tokens truncated…l. [OpenRouter free tier](https://openrouter.ai/pricing/)
+This explicit demo schema is the safer path because the existing Sheet code rejects mismatched headers and currently looks for the phone column at a fixed index. A later provider-unified schema can migrate both datasets after the demo.
+
+## Step 5 — Replace WhatsApp sends and adapt the conversation
+
+Add `src/trigger/real-estate/lib/send-telegram.ts` using Telegram's HTTPS `sendMessage` endpoint. It takes `chatId` and plain text, checks both HTTP status and the Bot API `ok` field, and returns Telegram's sent `message_id` for the event log. Keep the token out of logs, especially because the Bot API URL contains it. Handle `429` using the API's `retry_after` value; when a user blocks the bot or the chat becomes unavailable, mark follow-up inactive instead of retrying forever. Keep each message within Telegram's current 4,096-character text limit. [Bot API `sendMessage`](https://core.telegram.org/bots/api#sendmessage)
+
+Update the existing tasks:
+
+| Current file | Telegram change |
+| --- | --- |
+| `src/trigger/real-estate/inbound-message.ts` | Use channel-qualified lead ID and Telegram sender. Keep conversation memory, listing checks, qualifiers, slot selection, tentative event, and owner decision. Handle `/start`, `/help`, `/stop`, `/resume` before the AI call. Allow both `1/2/3` slot replies and owner `/confirm <code>` or `/decline <code>`. Only log a reply as sent after the Telegram API accepts it. |
+| `src/trigger/real-estate/qualify-lead.ts` and `lib/send-openrouter.ts` | Keep extraction and listing constraints; change the prompt from “WhatsApp assistant” to a channel-neutral “real-estate demo assistant.” Require a free model and provide a clear, truthful fallback if free-model capacity is exhausted. |
+| `src/trigger/real-estate/daily-follow-up.ts` | Replace Meta template names with ordinary Telegram text for days 1, 3, and 7. Preserve eligibility, deduplication, stop-on-reply, booking, and opt-out rules. Do not mark a touch sent when Telegram rejects it. |
+| `src/trigger/real-estate/nightly-missed-audit.ts` | Keep the existing reply-timing calculation; send the digest with `sendMessage` to `OWNER_TELEGRAM_CHAT_ID`. Record the sent Telegram message ID or clear delivery failure. |
+| `src/trigger/real-estate/lib/sheet.ts`, `lib/types.ts`, `lib/calendar.ts` | Implement the identity/schema updates from Step 4; keep listing and Calendar API behavior otherwise. |
+| `.env.example` | Add blank `TELEGRAM_BOT_TOKEN`, `OWNER_TELEGRAM_CHAT_ID`, the Development-only owner-as-prospect switch, and Telegram Sheet tab names. Meta/Twilio variables are inactive in this demo. |
+
+The current `lib/send-whatsapp.ts` can remain as an unused adapter for possible later WhatsApp onboarding. The Telegram demo must not call it or require Meta environment variables.
+
+## Automated regression tests
+
+Run `npm test` before a demo or code change. It compiles the TypeScript and runs the Node test suite. The tests use in-memory records and mocked Telegram, OpenRouter, Google Sheets, and Google Calendar boundaries; they do not message real chats or modify real sheets or calendars.
+
+Coverage includes Telegram polling and offset safety, contact identity and conversation memory, qualification and free-model fallback, slot availability and owner confirmation, opt-out and follow-up rules, blocked chats, nightly reply-SLA counts, and the Google Sheets schema/upsert paths. A live rehearsal is still needed to verify the account credentials, actual sheet sharing, and actual Calendar permissions.
+
+## Step 6 — Run a $0 rehearsal
+
+1. Start Trigger.dev Development locally (`npm run dev`) and keep it connected. Its scheduled `poll-telegram-updates` task runs each minute. After the first successful poll, send `/start` from the prospect account.
+2. Send a listing inquiry from the prospect account. Check a reply arrives and one row appears in `TelegramLeads`; send a second message and verify the same row is updated with remembered answers.
+3. Ask for a viewing; choose `1`, `2`, or `3`. Confirm Calendar availability was checked and a tentative event was created. The owner account should receive the booking code.
+4. From the owner account, send `/confirm <code>`. Check the Calendar event is confirmed, the lead row records confirmation, and the prospect receives the decision. Rehearse `/decline` with a separate request.
+5. Rehearse `/stop` and `/resume`. Confirm scheduled messages stop while opted out and resume only after the user's own command. Block the bot on a disposable test chat and verify the send failure stops follow-ups.
+6. Confirm a scheduled follow-up is due for a dedicated test lead and inspect the 09:00 EAT Trigger run. Keep the laptop on for the overnight audit and, if desired, the full seven-day sequence. Show audit totals in Trigger and the Telegram owner chat.
+7. Replay a previously seen update and confirm it does not duplicate the lead, outbound reply, follow-up touch, or Calendar event. Restart the local worker and verify polling resumes from the offset in `TelegramState`.
+
+**Done means:** a person can open the bot on their own Telegram phone, chat naturally, see one qualified lead row, request a viewing, and receive an owner-confirmed result. The follow-up and audit path must have a recorded successful send or an explicit failure state. The demo stays inside the free plan limits.
+
+## Practical limits and future handoff
+
+- This local arrangement is available only while the computer and Trigger Development worker are running. Telegram retains undelivered updates for no more than 24 hours. It is suited to a controlled live demo and recording, not an unattended client pilot. [Bot API](https://core.telegram.org/bots/api)
+- Telegram users must initiate the bot chat. The bot cannot reach a lead by phone number or automatically take over a brokerage's existing WhatsApp inbox. [Telegram bots](https://core.telegram.org/bots)
+- OpenRouter's free models can be rate-limited or unavailable. The bot should show a capacity message and preserve the lead rather than silently use a paid model. [OpenRouter free tier](https://openrouter.ai/pricing/)
 - When a client wants a live WhatsApp pilot, choose an approved WhatsApp sender and account path, then map the same channel-neutral lead/booking core to that provider. The Telegram demo does not resolve the Meta restriction.
 
 ## Implementation order
