@@ -27,7 +27,10 @@ export async function pollTelegramUpdates(deps: TelegramPollingDependencies) {
 
   const currentOffset = await deps.readOffset();
   const request: Record<string, unknown> = {
-    timeout: 15,
+    // This task runs once per minute in the Free Production environment. A
+    // non-blocking request keeps compute use low while still delivering within
+    // about a minute; long polling here would consume most of the free credits.
+    timeout: 0,
     limit: 20,
     allowed_updates: ["message"],
   };
@@ -77,3 +80,4 @@ export async function pollTelegramUpdates(deps: TelegramPollingDependencies) {
     offset: nextOffset ?? currentOffset,
   };
 }
+
