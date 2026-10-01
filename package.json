@@ -1,0 +1,23 @@
+{
+  "name": "ai-automations",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "trigger dev",
+    "build": "tsc --noEmit --skipLibCheck",
+    "typecheck": "tsc --noEmit --skipLibCheck",
+    "test": "tsc --skipLibCheck --noEmit false && node --test tests/*.test.mjs",
+    "seed:listings": "node scripts/seed-demo-listings.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.4.0",
+    "trigger.dev": "4.4.0",
+    "typescript": "^5.9.3"
+  },
+  "dependencies": {
+    "@trigger.dev/sdk": "4.4.0",
+    "googleapis": "^144.0.0",
+    "zod": "^3.23.8"
+  }
+}

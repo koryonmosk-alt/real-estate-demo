@@ -1,0 +1,21 @@
+listing_id,title,area,bedrooms,bathrooms,price_ugx,currency,property_type,status,listing_url,notes,photo_urls,deal_type
+UG-R-001,"Fictional Kampala bedsitter for rent",Bwaise,0,1,350000,UGX,apartment,available,,"FICTIONAL DEMO ONLY. UGX 350,000 monthly rent; invented listing; no real address or amenities.",,rent
+UG-R-002,"Fictional Kampala 1-bedroom for rent",Kawempe,1,1,650000,UGX,apartment,available,,"FICTIONAL DEMO ONLY. UGX 650,000 monthly rent; invented listing; no real address or amenities.",,rent
+UG-R-003,"Fictional Kampala 2-bedroom for rent",Kisaasi,2,1,1100000,UGX,apartment,available,,"FICTIONAL DEMO ONLY. UGX 1,100,000 monthly rent; invented listing; no real address or amenities.",,rent
+UG-R-004,"Fictional Kampala 3-bedroom family home for rent",Kisaasi,3,2,2500000,UGX,house,available,,"FICTIONAL DEMO ONLY. UGX 2,500,000 monthly rent; invented listing; no real address or amenities.",,rent
+UG-R-005,"Fictional Wakiso 1-bedroom for rent",Kireka,1,1,550000,UGX,apartment,available,,"FICTIONAL DEMO ONLY. UGX 550,000 monthly rent; invented listing; no real address or amenities.",,rent
+UG-R-006,"Fictional Wakiso 2-bedroom for rent",Nansana,2,1,750000,UGX,house,available,,"FICTIONAL DEMO ONLY. UGX 750,000 monthly rent; invented listing; no real address or amenities.",,rent
+UG-R-007,"Fictional Wakiso 2-bedroom apartment for rent",Kira,2,2,1200000,UGX,apartment,available,,"FICTIONAL DEMO ONLY. UGX 1,200,000 monthly rent; invented listing; no real address or amenities.",,rent
+UG-R-008,"Fictional Entebbe 2-bedroom for rent",Katabi,2,1,1000000,UGX,apartment,available,,"FICTIONAL DEMO ONLY. UGX 1,000,000 monthly rent; invented listing; no real address or amenities.",,rent
+UG-R-009,"Fictional Mukono 2-bedroom for rent",Mukono,2,1,700000,UGX,apartment,available,,"FICTIONAL DEMO ONLY. UGX 700,000 monthly rent; invented listing; no real address or amenities.",,rent
+UG-R-010,"Fictional Jinja 2-bedroom for rent",Jinja,2,1,600000,UGX,house,available,,"FICTIONAL DEMO ONLY. UGX 600,000 monthly rent; invented listing; no real address or amenities.",,rent
+UG-R-011,"Fictional Mbarara 2-bedroom for rent",Mbarara,2,1,650000,UGX,house,available,,"FICTIONAL DEMO ONLY. UGX 650,000 monthly rent; invented listing; no real address or amenities.",,rent
+UG-R-012,"Fictional Gulu 2-bedroom for rent",Gulu,2,1,600000,UGX,apartment,available,,"FICTIONAL DEMO ONLY. UGX 600,000 monthly rent; invented listing; no real address or amenities.",,rent
+UG-R-013,"Fictional Mbale 1-bedroom for rent",Mbale,1,1,400000,UGX,apartment,available,,"FICTIONAL DEMO ONLY. UGX 400,000 monthly rent; invented listing; no real address or amenities.",,rent
+UG-R-014,"Fictional Masaka 3-bedroom for rent",Masaka,3,2,900000,UGX,house,available,,"FICTIONAL DEMO ONLY. UGX 900,000 monthly rent; invented listing; no real address or amenities.",,rent
+UG-R-015,"Fictional Fort Portal 2-bedroom for rent",Fort Portal,2,1,600000,UGX,house,available,,"FICTIONAL DEMO ONLY. UGX 600,000 monthly rent; invented listing; no real address or amenities.",,rent
+UG-S-001,"Fictional Wakiso 2-bedroom house for sale",Bulenga,2,1,65000000,UGX,house,available,,"FICTIONAL DEMO ONLY. UGX 65,000,000 one-time illustrative sale price; invented listing; no real address or title.",,sale
+UG-S-002,"Fictional Jinja 2-bedroom home for sale",Bugembe,2,1,75000000,UGX,house,available,,"FICTIONAL DEMO ONLY. UGX 75,000,000 one-time illustrative sale price; invented listing; no real address or title.",,sale
+UG-S-003,"Fictional Mbarara 3-bedroom home for sale",Mbarara,3,2,150000000,UGX,house,available,,"FICTIONAL DEMO ONLY. UGX 150,000,000 one-time illustrative sale price; invented listing; no real address or title.",,sale
+UG-S-004,"Fictional Mukono residential plot for sale",Mukono,0,0,35000000,UGX,land,available,,"FICTIONAL DEMO ONLY. UGX 35,000,000 one-time illustrative sale price; invented plot; no real coordinates or title.",,sale
+UG-S-005,"Fictional Kira 3-bedroom house for sale",Kira,3,2,280000000,UGX,house,available,,"FICTIONAL DEMO ONLY. UGX 280,000,000 one-time illustrative sale price; invented listing; no real address or title.",,sale
