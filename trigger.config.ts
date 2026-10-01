@@ -36,7 +36,10 @@ export default defineConfig({
       syncEnvVars(({ env, environment }) => {
         if (environment !== "prod") return;
 
-        const missing = productionVariableNames.filter((name) => !env[name]);
+        const resolvedVariables = Object.fromEntries(
+          productionVariableNames.map((name) => [name, env[name] ?? process.env[name]]),
+        );
+        const missing = productionVariableNames.filter((name) => !resolvedVariables[name]);
         if (missing.length > 0) {
           throw new Error(
             `Cannot deploy Production: missing required environment variables: ${missing.join(", ")}`,
@@ -45,7 +48,7 @@ export default defineConfig({
 
         return productionVariableNames.map((name) => ({
           name,
-          value: env[name]!,
+          value: resolvedVariables[name]!,
           isSecret: productionSecretNames.has(name),
         }));
       }),
