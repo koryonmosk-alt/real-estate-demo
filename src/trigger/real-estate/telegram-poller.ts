@@ -12,10 +12,11 @@ export const pollTelegramUpdates = schedules.task({
   run: async () => pollTelegramUpdateBatch({
     readOffset: readTelegramUpdateOffset,
     getWebhookInfo: () => telegramRequest<{ url?: string }>("getWebhookInfo", {}),
-    getUpdates: (payload) => telegramRequest("getUpdates", payload, 18_000),
+    getUpdates: (payload) => telegramRequest("getUpdates", payload, 5_000),
     enqueueInbound: async (payload, idempotencyKey) => {
       await tasks.trigger<typeof inboundMessage>("inbound-message", payload, { idempotencyKey });
     },
     writeOffset: writeTelegramUpdateOffset,
   }),
 });
+
