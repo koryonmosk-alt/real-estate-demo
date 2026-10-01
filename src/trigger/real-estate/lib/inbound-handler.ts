@@ -317,6 +317,7 @@ export function createInboundMessageHandler(deps: InboundDependencies) {
       timestamp: payload.timestamp, listings, history: historyFrom(row), existing: extractionFrom(row) });
     const { reply, extraction } = qualified;
     recordInbound(row, payload);
+    row.needs_human = false;
     row.prospect_name = extraction.prospect_name ?? row.prospect_name;
     row.budget_ugx = extraction.budget_ugx === null ? "" : String(extraction.budget_ugx);
     row.area_preference = extraction.area_preference ?? "";
@@ -352,3 +353,4 @@ export function createInboundMessageHandler(deps: InboundDependencies) {
       booking_status: row.booking_status };
   };
 }
+
