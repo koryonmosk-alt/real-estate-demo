@@ -16,11 +16,11 @@ Telegram changes the **channel**. A Telegram demo demonstrates the qualification
 | --- | --- | --- |
 | Messaging | Telegram Bot API | Free for developers and users; use normal bot messages, not paid broadcast features. [Telegram bots](https://core.telegram.org/bots) |
 | Inbound | `getUpdates` long polling on this laptop | No HTTPS webhook host, tunnel, domain, or paid phone number. Telegram polling and webhooks are mutually exclusive. [Bot API](https://core.telegram.org/bots/api) |
-| Workflow | Existing Trigger.dev **Development** environment and local `npm run dev` | Trigger lists a $0 Free plan and says DEV runs are not charged. Do not upgrade or deploy to a paid plan. [Trigger pricing](https://trigger.dev/pricing/) |
+| Workflow | Trigger.dev **Production** on the Free plan, with a once-per-minute non-blocking Telegram poll | Trigger lists a $0 Free plan with $5 monthly usage credits. Production runs use those included credits; the Free plan stops tasks when credits are exhausted. Do not upgrade or add billing. [Trigger pricing](https://trigger.dev/pricing/) |
 | AI | Existing OpenRouter key with `LLM_MODEL=openrouter/free` | Use only free models. The current Free plan lists 50 requests/day; a limit or unavailable model must stop/retry safely, never switch to a paid model. [OpenRouter pricing](https://openrouter.ai/pricing/), [free models](https://openrouter.ai/collections/free-models/) |
 | Data and booking | Existing Google Sheets and Calendar service account | Keep API use within standard quotas and do not enable a paid billing path. Google describes standard Sheets use as no additional cost and Calendar use below its daily billing threshold as no extra charge. Check current project quotas before a public demo. [Sheets quotas](https://developers.google.com/workspace/sheets/api/limits), [Calendar quotas](https://developers.google.com/workspace/calendar/api/guides/quota) |
 
-This plan requires a computer with internet access during the live demo. Keep the laptop and the local Trigger.dev Development worker running for inbound polling, scheduled follow-ups, and the nightly audit. Telegram retains unreceived updates for **at most 24 hours**; a longer outage can lose inbound messages. An always-on client pilot needs a separate hosting decision. Do not put this prospective-client demo on Vercel Hobby: Vercel restricts that free plan to personal, non-commercial use. [Telegram update retention](https://core.telegram.org/bots/api), [Vercel Hobby](https://vercel.com/docs/plans/hobby)
+Production polling and scheduled follow-ups run on Trigger.dev while usage credits remain; no laptop worker is needed. The poller checks Telegram once per minute without long polling to reduce compute use. Monitor Trigger.dev usage; if the $5 monthly credit runs out, the Free plan stops tasks until credits reset. Telegram retains unreceived updates for **at most 24 hours**; a longer outage can lose inbound messages. An always-on client pilot needs a separate hosting decision. Do not put this prospective-client demo on Vercel Hobby: Vercel restricts that free plan to personal, non-commercial use. [Telegram update retention](https://core.telegram.org/bots/api), [Vercel Hobby](https://vercel.com/docs/plans/hobby)
 
 ## Step 1 — Prepare the Telegram bot and test chats
 
@@ -43,7 +43,7 @@ Add a Trigger.dev task at `src/trigger/real-estate/telegram-poller.ts`, schedule
 
 - Load `TELEGRAM_BOT_TOKEN` from Trigger.dev Development. The poll task's first `getUpdates` request checks the token; a bad token produces a clear failed run without printing the credential. Trigger.dev's local worker reads its own project configuration normally.
 - Check `getWebhookInfo`. If a webhook is configured, stop with a clear instruction; do not silently delete a webhook that might belong to another running deployment. `getUpdates` cannot receive updates while a webhook is set. [Bot API](https://core.telegram.org/bots/api)
-- Run a single queued scheduled task with `getUpdates`, a positive long-poll timeout, and one active poll at a time. Request only `message` updates for the first version. Filter to private text chats and supported commands.
+  - Run a single queued scheduled task with `getUpdates` every minute, `timeout: 0`, a short request timeout, and one active poll at a time. Request only `message` updates for the first version. This gives up to about one minute of intake delay while avoiding the compute cost of long polling. Filter to private text chats and supported commands.
 - For each accepted update, build a normalized payload: `channel="telegram"`, `contactKey="telegram:<chat_id>"`, `chatId` as a string, `messageId="telegram:<chat_id>:<message.message_id>"`, the message text, profile display name, and the message timestamp. Use `update_id` for intake idempotency.
 - Enqueue the existing Trigger `inbound-message` task with an idempotency key derived from `update_id`. Process updates in order. Persist the highest processed `update_id + 1` in the `TelegramState` Sheet tab **only after** the full returned batch was safely enqueued or intentionally ignored. On an enqueue error, leave the saved offset unchanged so Telegram returns the updates again; Trigger idempotency makes replay safe.
 - Handle network errors through Trigger retries. Run only one scheduled poll task at a time. Telegram can hold incoming updates for at most 24 hours, so the local worker must be running during demos. [Polling semantics](https://core.telegram.org/bots/api#getupdates)
@@ -87,7 +87,7 @@ Coverage includes Telegram polling and offset safety, contact identity and conve
 
 ## Step 6 — Run a $0 rehearsal
 
-1. Start Trigger.dev Development locally (`npm run dev`) and keep it connected. Its scheduled `poll-telegram-updates` task runs each minute. After the first successful poll, send `/start` from the prospect account.
+1. Confirm the Production deployment and its `poll-telegram-updates` schedule are active. The task polls once per minute. After the first successful poll, send `/start` from the prospect account.
 2. Send a listing inquiry from the prospect account. Check a reply arrives and one row appears in `TelegramLeads`; send a second message and verify the same row is updated with remembered answers.
 3. Ask for a viewing; choose `1`, `2`, or `3`. Confirm Calendar availability was checked and a tentative event was created. The owner account should receive the booking code.
 4. From the owner account, send `/confirm <code>`. Check the Calendar event is confirmed, the lead row records confirmation, and the prospect receives the decision. Rehearse `/decline` with a separate request.
@@ -112,3 +112,4 @@ Coverage includes Telegram polling and offset safety, contact identity and conve
 4. Refactor identity/storage and route the existing Trigger tasks through Telegram.
 5. Adapt follow-ups and nightly audit; add truthful failure states.
 6. Run the full rehearsal and record a short demo showing Telegram, the lead Sheet, and Calendar.
+
