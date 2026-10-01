@@ -156,7 +156,173 @@ export function createInboundMessageHandler(deps: InboundDependencies) {
     if (match[1].toLowerCase() === "confirm") {
       await deps.confirmViewing(lead.calendar_event_id);
       lead.booking_status = "confirmed";
-      lead.notes = `${lead.notes} | confirmed_at=${now().toISOString()…2108 tokens truncated…ion.deal_type ?? row.deal_type;
+      lead.notes = `${lead.notes} | confirmed_at=${now().toISOString()}`;
+      await deps.upsertLead(lead);
+      await sendCustomerDecision(lead,
+        `Your viewing for ${label} (EAT) is confirmed. The agent will meet you there.`, payload.messageId);
+      await sendLogged(null, owner, payload.contactKey,
+        `Viewing ${lead.booking_code} confirmed; prospect notified.`, payload.messageId, "owner");
+      return { handled: true, result: "confirmed" };
+    }
+    await deps.declineViewing(lead.calendar_event_id);
+    lead.booking_status = "declined";
+    lead.notes = `${lead.notes} | declined_at=${now().toISOString()}`;
+    await deps.upsertLead(lead);
+    await sendCustomerDecision(lead,
+      `Sorry, ${label} (EAT) is unavailable. Reply to arrange another viewing.`, payload.messageId);
+    await sendLogged(null, owner, payload.contactKey,
+      `Viewing ${lead.booking_code} declined; prospect notified.`, payload.messageId, "owner");
+    return { handled: true, result: "declined" };
+  }
+
+  async function handleSlotSelection(row: LeadRow, payload: InboundPayload): Promise<boolean> {
+    if (row.booking_status !== "proposed") return false;
+    const match = payload.text.trim().match(/^[1-3]$/);
+    if (!match) return false;
+    const slot = slotsFrom(row)[Number(match[0]) - 1];
+    if (!slot) return false;
+    recordInbound(row, payload);
+    if (Date.parse(slot.start) <= now().getTime() || !(await deps.slotIsFree(slot))) {
+      const fresh = await deps.proposeSlots({ daysAhead: 7, count: 3 });
+      row.proposed_slots = JSON.stringify(fresh);
+      if (fresh.length) {
+        row.booking_status = "proposed";
+        row.needs_human = false;
+      } else {
+        row.booking_status = "none";
+        row.needs_human = true;
+        row.follow_up_active = false;
+        row.next_follow_up = "";
+      }
+      await deps.upsertLead(row);
+      await sendLogged(row, row.telegram_chat_id, row.contact_key, fresh.length
+        ? `That time was taken. Please choose a new option:\n${deps.formatSlotOptions(fresh)}`
+        : "That time was taken. The agent will contact you to arrange another viewing.",
+        payload.messageId);
+      return true;
+    }
+    const owner = deps.ownerChatId();
+    if (!owner) throw new Error("OWNER_TELEGRAM_CHAT_ID is not set");
+    const eventId = deps.viewingEventId(payload.messageId);
+    await deps.requestViewing({ slot, eventId, prospect: row.prospect_name, contactKey: row.contact_key,
+      listingId: row.listing_id });
+    row.booking_status = "requested";
+    row.booking_code = createHash("sha256").update(payload.messageId).digest("hex").slice(0, 8);
+    row.calendar_event_id = eventId;
+    row.selected_slot = slot.start;
+    row.viewing_intent = false;
+    row.follow_up_active = false;
+    row.next_follow_up = "";
+    row.notes = `slot=${slot.start} | awaiting agent confirmation`;
+    await deps.upsertLead(row);
+    await sendLogged(row, row.telegram_chat_id, row.contact_key,
+      `I've requested ${slot.label} (EAT) for your viewing. The agent will confirm it shortly.`,
+      payload.messageId, "booking");
+
+    await sendLogged(null, owner, `telegram:${owner}`,
+      `Viewing request ${row.booking_code}\nProspect: ${row.prospect_name || row.contact_key}\n` +
+      `Contact: ${row.contact_key}\nListing: ${row.listing_id || "unspecified"}\n` +
+      `Time: ${slot.label} (EAT)\nReply /confirm ${row.booking_code} or /decline ${row.booking_code}.`,
+      payload.messageId, "owner");
+    return true;
+  }
+
+  return async function handleInboundMessage(payload: InboundPayload) {
+    if (payload.channel !== "telegram") throw new Error("This demo accepts Telegram messages only");
+    if (!payload.chatId || payload.contactKey !== `telegram:${payload.chatId}`) {
+      throw new Error("Telegram contact identity is invalid");
+    }
+    if (!deps.hasBotToken()) throw new Error("TELEGRAM_BOT_TOKEN is not set");
+
+    const ownerCommand = await handleOwnerCommand(payload);
+    if (ownerCommand.handled) return ownerCommand;
+
+    if (/^\/whoami(?:@[a-z0-9_]+)?$/i.test(payload.text.trim())) {
+      await sendLogged(null, payload.chatId, payload.contactKey,
+        `Your Telegram chat ID is ${payload.chatId}. Keep it private and set it as OWNER_TELEGRAM_CHAT_ID only for the owner account.`,
+        payload.messageId, "owner");
+      return { chat_id_returned: true };
+    }
+
+    const owner = deps.ownerChatId();
+    if (owner && payload.chatId === owner && !deps.allowOwnerAsProspect()) {
+      await logInbound(payload, "owner");
+      await sendLogged(null, payload.chatId, payload.contactKey,
+        "Owner commands: /confirm <code>, /decline <code>, or /whoami.", payload.messageId, "owner");
+      return { owner_help: true };
+    }
+
+    const existing = await deps.findLead(payload.contactKey);
+    if (existing?.last_message_id === payload.messageId) return { duplicate: true };
+    const row = existing ?? blankLead(payload);
+    await logInbound(payload);
+    const command = payload.text.trim().replace(/@[a-z0-9_]+$/i, "").toLowerCase();
+
+    if (command === "/start" || command.startsWith("/start ") || command === "/resume" ||
+        ["start", "resume"].includes(command)) {
+      recordInbound(row, payload);
+      row.opted_out = false;
+      row.follow_up_active = false;
+      row.next_follow_up = "";
+      await deps.upsertLead(row);
+      await sendLogged(row, row.telegram_chat_id, row.contact_key,
+        `Welcome to the fictional Uganda Homes property demo${row.prospect_name ? `, ${row.prospect_name}` : ""}. ` +
+        "Tell me your budget, preferred area, bedrooms, and when you hope to move. Use /help for commands.",
+        payload.messageId);
+      return { opted_out: false, started: true };
+    }
+    if (command === "/help") {
+      recordInbound(row, payload);
+      row.follow_up_active = false;
+      row.next_follow_up = "";
+      await deps.upsertLead(row);
+      await sendLogged(row, row.telegram_chat_id, row.contact_key,
+        "Ask about a property or share your budget, area, bedrooms, and timeline. Use /stop to pause follow-ups and /resume to restart.",
+        payload.messageId);
+      return { help: true };
+    }
+    if (command === "/stop" || ["stop", "unsubscribe", "cancel"].includes(command)) {
+      recordInbound(row, payload);
+      row.opted_out = true;
+      row.follow_up_active = false;
+      row.next_follow_up = "";
+      await deps.upsertLead(row);
+      await sendLogged(row, row.telegram_chat_id, row.contact_key,
+        "Follow-ups are paused. Send /resume any time to continue.", payload.messageId);
+      return { opted_out: true };
+    }
+    if (row.opted_out) {
+      recordInbound(row, payload);
+      await deps.upsertLead(row);
+      return { opted_out: true };
+    }
+
+    if (await handleSlotSelection(row, payload)) return { booking_status: row.booking_status };
+
+    let listings: Listing[] = [];
+    try { listings = await deps.readListings(); }
+    catch (err) { console.warn(`listings read failed: ${err instanceof Error ? err.message : "unknown error"}`); }
+    if (!listings.some((listing) => listing.status === "available")) {
+      recordInbound(row, payload);
+      row.needs_human = true;
+      row.follow_up_active = false;
+      row.next_follow_up = "";
+      await deps.upsertLead(row);
+      await sendLogged(row, row.telegram_chat_id, row.contact_key,
+        "I don't have the latest property details right now. The agent will reply shortly.", payload.messageId);
+      return { needs_human: true };
+    }
+    const qualified = await deps.qualify({ contactKey: payload.contactKey,
+      fromName: payload.fromName, text: payload.text, messageId: payload.messageId,
+      timestamp: payload.timestamp, listings, history: historyFrom(row), existing: extractionFrom(row) });
+    const { reply, extraction } = qualified;
+    recordInbound(row, payload);
+    row.prospect_name = extraction.prospect_name ?? row.prospect_name;
+    row.budget_ugx = extraction.budget_ugx === null ? "" : String(extraction.budget_ugx);
+    row.area_preference = extraction.area_preference ?? "";
+    row.bedrooms = extraction.bedrooms === null ? "" : String(extraction.bedrooms);
+    row.timeline = extraction.timeline ?? "";
+    row.deal_type = extraction.deal_type ?? row.deal_type;
     row.listing_id = extraction.listing_id ?? row.listing_id;
     row.qualification_status = mapQualificationStatus(extraction);
     row.lead_status = hasAllQualifiers(extraction) ? "warm" : "cold";
