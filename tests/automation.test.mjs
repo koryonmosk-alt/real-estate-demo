@@ -219,6 +219,26 @@ test("a qualified request with no listings is routed to a human without calling 
   assert.match(fixture.state.sent.at(-1).text, /latest property details right now/);
 });
 
+test("a lead resumes normal handling after the listings sheet becomes readable", async () => {
+  const fixture = automationFixture();
+  const readListings = fixture.deps.readListings;
+  fixture.deps.readListings = async () => { throw new Error("The caller does not have permission"); };
+
+  await fixture.handle(fixture.message("prospect-209", "I need a 1 bedroom rental in Kampala"));
+  let lead = fixture.state.leads.get("telegram:prospect-209");
+  assert.equal(lead.needs_human, true);
+  assert.equal(lead.follow_up_active, false);
+
+  fixture.deps.readListings = readListings;
+  await fixture.handle(fixture.message("prospect-209", "My budget is 300k UGX, moving next month"));
+
+  lead = fixture.state.leads.get("telegram:prospect-209");
+  assert.equal(fixture.state.qualifications.length, 1);
+  assert.equal(lead.needs_human, false);
+  assert.equal(lead.follow_up_active, true);
+  assert.doesNotMatch(fixture.state.sent.at(-1).text, /latest property details right now/);
+});
+
 test("owner confirmation commands from another chat cannot change a viewing", async () => {
   const { handle, message, state } = automationFixture();
   await handle(message("prospect-202", "/start"));
@@ -455,3 +475,4 @@ test("when a proposed slot becomes unavailable and no replacement exists, the le
   assert.equal(lead.follow_up_active, false);
   assert.equal(fixture.state.calendar.size, 0);
 });
+
