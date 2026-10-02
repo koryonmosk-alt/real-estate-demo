@@ -447,6 +447,24 @@ test("qualification retries provider errors and falls back without inventing boo
   assert.deepEqual(result.extraction, { ...existing, needs_booking: false, prospect_name: "Sam" });
 });
 
+test("a spent free daily quota is reported honestly and is not retried", async () => {
+  let calls = 0;
+  const runQualification = createQualifyLeadHandler({
+    hasApiKey: () => true,
+    model: () => "vendor/model:free",
+    callOpenRouter: async () => { calls++; throw new Error('OpenRouter failed 429: {"error":{"message":"Rate limit exceeded: free-models-per-day."}}'); },
+  });
+  const existing = { budget_ugx: null, area_preference: null, bedrooms: null, timeline: null,
+    listing_id: null, needs_booking: false, prospect_name: null, deal_type: null };
+
+  const result = await runQualification({ text: "Hi", fromName: "Sam", existing,
+    listings: [], history: [], contactKey: "telegram:445566", messageId: "m2", timestamp: "2026-09-29T10:00:00Z" });
+
+  assert.equal(calls, 1);
+  assert.match(result.reply, /free daily limit/);
+  assert.doesNotMatch(result.reply, /at capacity/);
+});
+
 test("a viewing request with no available slots is handed to an agent and removed from follow-ups", async () => {
   const fixture = automationFixture();
   fixture.deps.proposeSlots = async () => [];

@@ -97,6 +97,19 @@ test("OpenRouter treats an empty or JSON-only model reply as a failure so it can
   assert.ok(body.max_tokens >= 1000);
 });
 
+test("OpenRouter prompt treats 'any area' as answered and forbids re-confirming collected details", async (t) => {
+  setEnv(t, { OPENROUTER_API_KEY: "unit-test-openrouter-key", LLM_MODEL: "vendor/model:free" });
+  let prompt = "";
+  t.mock.method(globalThis, "fetch", async (_url, init) => {
+    prompt = JSON.parse(init.body).messages[0].content;
+    return Response.json({ choices: [{ message: { content: "Sure.\n{}" } }] });
+  });
+
+  await callOpenRouter({ text: "Any area it doesnt matter", listings: [], history: [], existing: blankExisting });
+  assert.match(prompt, /set area_preference to "Any area"/);
+  assert.match(prompt, /Never ask the prospect to re-confirm/);
+});
+
 test("OpenRouter preserves qualifiers and rejects an incompatible listing from the feed", async (t) => {
   setEnv(t, { OPENROUTER_API_KEY: "unit-test-openrouter-key", LLM_MODEL: "vendor/model:free" });
   const listing = { listing_id: "KISAASI-1", title: "Green Court", area: "Kisaasi", bedrooms: 3,
