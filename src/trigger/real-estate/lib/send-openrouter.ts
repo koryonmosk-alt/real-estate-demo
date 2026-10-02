@@ -5,7 +5,10 @@ function requireOpenRouterEnv() {
   if (!key) throw new Error("OPENROUTER_API_KEY is not set");
   const model = process.env.LLM_MODEL;
   if (!model) throw new Error("LLM_MODEL is not set");
-  if (model !== "openrouter/free" && !model.endsWith(":free")) {
+  if (model === "openrouter/free") {
+    throw new Error("LLM_MODEL must name one specific :free model; openrouter/free routes randomly and can pick models that return empty or non-chat replies");
+  }
+  if (!model.endsWith(":free")) {
     throw new Error("LLM_MODEL must be a free OpenRouter model for the zero-cost demo");
   }
   return { key, model };
@@ -74,8 +77,10 @@ export async function callOpenRouter(params: {
       model,
       messages: [{ role: "user", content: prompt }],
       temperature: 0.4,
-      max_tokens: 600,
+      max_tokens: 1200,
+      reasoning: { enabled: false },
     }),
+    signal: AbortSignal.timeout(45_000),
   });
 
   if (!res.ok) {
@@ -84,7 +89,7 @@ export async function callOpenRouter(params: {
   }
 
   const data = (await res.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+    choices?: Array<{ finish_reason?: string; message?: { content?: string } }>;
   };
   const content = data.choices?.[0]?.message?.content ?? "";
   const jsonLine = extractJsonLine(content);
@@ -131,6 +136,7 @@ export async function callOpenRouter(params: {
     }
   }
 
-  const reply = jsonLine ? content.replace(jsonLine, "").trim() : content.trim();
-  return { reply: reply || content.trim(), extraction };
+  const reply = (jsonLine ? content.replace(jsonLine, "") : content).trim();
+  if (!reply) throw new Error(`OpenRouter returned no reply text (finish_reason=${data.choices?.[0]?.finish_reason ?? "unknown"})`);
+  return { reply, extraction };
 }

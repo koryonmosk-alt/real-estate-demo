@@ -20,12 +20,9 @@ export function createQualifyLeadHandler(deps: QualificationDependencies) {
           history: payload.history,
           existing: payload.existing,
         });
-        const trimmed = reply.trim();
-        return {
-          reply: trimmed || "Thanks for reaching out — let me connect you to the agent for details.",
-          extraction,
-        };
+        return { reply: reply.trim(), extraction };
       } catch {
+        if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 1500));
         if (attempt === 1) {
           return {
             reply: "Thanks for your message — the demo assistant is at capacity right now. Please try again shortly, or use /help for options.",

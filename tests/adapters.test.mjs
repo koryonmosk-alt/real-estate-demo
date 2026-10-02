@@ -68,8 +68,37 @@ test("OpenRouter refuses a paid model before calling the provider", async (t) =>
   assert.equal(fetchMock.mock.callCount(), 0);
 });
 
-test("OpenRouter preserves qualifiers and rejects an incompatible listing from the feed", async (t) => {
+const blankExisting = { budget_ugx: null, area_preference: null, bedrooms: null, timeline: null,
+  listing_id: null, needs_booking: false, prospect_name: null, deal_type: null };
+
+test("OpenRouter refuses the random free router before calling the provider", async (t) => {
   setEnv(t, { OPENROUTER_API_KEY: "unit-test-openrouter-key", LLM_MODEL: "openrouter/free" });
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => { throw new Error("unexpected request"); });
+
+  await assert.rejects(callOpenRouter({ text: "Hello", listings: [], history: [], existing: blankExisting }),
+    /one specific :free model/);
+  assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("OpenRouter treats an empty or JSON-only model reply as a failure so it can be retried", async (t) => {
+  setEnv(t, { OPENROUTER_API_KEY: "unit-test-openrouter-key", LLM_MODEL: "vendor/model:free" });
+  let body;
+  const replies = ["", '{"budget_ugx":300000}'];
+  t.mock.method(globalThis, "fetch", async (_url, init) => {
+    body = JSON.parse(init.body);
+    return Response.json({ choices: [{ finish_reason: "length", message: { content: replies.shift() } }] });
+  });
+
+  for (let i = 0; i < 2; i++) {
+    await assert.rejects(callOpenRouter({ text: "Hi", listings: [], history: [], existing: blankExisting }),
+      /no reply text \(finish_reason=length\)/);
+  }
+  assert.deepEqual(body.reasoning, { enabled: false });
+  assert.ok(body.max_tokens >= 1000);
+});
+
+test("OpenRouter preserves qualifiers and rejects an incompatible listing from the feed", async (t) => {
+  setEnv(t, { OPENROUTER_API_KEY: "unit-test-openrouter-key", LLM_MODEL: "vendor/model:free" });
   const listing = { listing_id: "KISAASI-1", title: "Green Court", area: "Kisaasi", bedrooms: 3,
     bathrooms: 2, price_ugx: 2500000, currency: "UGX", property_type: "Apartment", status: "available",
     listing_url: "", notes: "", photo_urls: [], deal_type: "rent" };
@@ -77,7 +106,7 @@ test("OpenRouter preserves qualifiers and rejects an incompatible listing from t
   t.mock.method(globalThis, "fetch", async (url, init) => {
     assert.equal(url, "https://openrouter.ai/api/v1/chat/completions");
     assert.equal(init.headers.Authorization, "Bearer unit-test-openrouter-key");
-    assert.equal(JSON.parse(init.body).model, "openrouter/free");
+    assert.equal(JSON.parse(init.body).model, "vendor/model:free");
     return Response.json({ choices: [{ message: { content:
       'I can help with Green Court.\n{"deal_type":"rent","listing_id":"SALE-1","needs_booking":true}' } }] });
   });

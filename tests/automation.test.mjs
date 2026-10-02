@@ -433,7 +433,7 @@ test("qualification retries provider errors and falls back without inventing boo
   let calls = 0;
   const runQualification = createQualifyLeadHandler({
     hasApiKey: () => true,
-    model: () => "openrouter/free",
+    model: () => "vendor/model:free",
     callOpenRouter: async () => { calls++; throw new Error("provider unavailable"); },
   });
   const existing = { budget_ugx: 2500000, area_preference: "Kisaasi", bedrooms: 3,
