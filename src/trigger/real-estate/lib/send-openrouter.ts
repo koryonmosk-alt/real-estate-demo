@@ -45,6 +45,7 @@ Prospect message:
 Reply naturally first (1-3 short sentences), then output the JSON line.
 Preserve earlier confirmed values in the JSON even if they are not repeated in the latest message. If information is still missing, ask for the next missing qualifier. Do not offer a viewing slot until all qualifiers are collected.
 If the prospect has no area preference (for example "any area", "anywhere", "flexible", "doesn't matter"), set area_preference to "Any area"; that counts as answered, so do not ask about the area again. Likewise a timeline like "anytime" or "no rush" is a valid answer.
+Use the prospect's name at most once, in your first reply only; do not start later replies with "Hi" or a greeting.
 Never ask the prospect to re-confirm details they already gave, and treat "yes"/"yeah" as agreement with your last question. Once rent-or-buy, budget, area, bedrooms and timeline are all known, do not ask any more questions about them: in 1-2 short sentences name the best-matching listing from the Listings Feed (or say nothing fits their budget and offer the closest option), then ask if they would like to arrange a viewing.`;
 }
 
