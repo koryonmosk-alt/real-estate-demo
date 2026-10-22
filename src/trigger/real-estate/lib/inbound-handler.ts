@@ -27,6 +27,8 @@ export type InboundDependencies = {
   now?: () => Date;
 };
 
+const AFFIRMATIVE = /^(yes|yeah|yep|yup|ya|sure|ok|okay|definitely|of course)\b[\s,.!]*(please)?[\s.!]*$/i;
+
 export function createInboundMessageHandler(deps: InboundDependencies) {
   const now = deps.now ?? (() => new Date());
 
@@ -125,6 +127,30 @@ export function createInboundMessageHandler(deps: InboundDependencies) {
       console.warn(`calendar slot lookup failed: ${err instanceof Error ? err.message : "unknown error"}`);
       return [];
     }
+  }
+
+  // Mutates the lead to "proposed" (or hands it to an agent) and returns the text to append to the reply.
+  async function offerSlots(row: LeadRow): Promise<string> {
+    const slots = await tryProposeSlots();
+    row.viewing_intent = false;
+    if (slots.length) {
+      row.proposed_slots = JSON.stringify(slots);
+      row.booking_status = "proposed";
+      return `\n\nAvailable viewing times (EAT):\n${deps.formatSlotOptions(slots)}\nReply 1, 2, or 3 to request one.`;
+    }
+    row.needs_human = true;
+    row.follow_up_active = false;
+    row.next_follow_up = "";
+    return "\n\nThe agent will contact you to arrange a viewing.";
+  }
+
+  // The model rarely flags a bare "yes" as a booking request, so answering our own viewing
+  // offer is detected here instead of trusting needs_booking.
+  function acceptsViewingOffer(row: LeadRow, text: string): boolean {
+    if (["proposed", "requested", "confirmed"].includes(row.booking_status)) return false;
+    if (!AFFIRMATIVE.test(text.trim()) || !hasAllQualifiers(extractionFrom(row))) return false;
+    const last = historyFrom(row).at(-1);
+    return last?.role === "assistant" && /viewing/i.test(last.text) && last.text.trim().endsWith("?");
   }
 
   async function sendCustomerDecision(row: LeadRow, text: string, inboundId: string): Promise<void> {
@@ -320,6 +346,15 @@ export function createInboundMessageHandler(deps: InboundDependencies) {
 
     if (await handleSlotSelection(row, payload)) return { booking_status: row.booking_status };
 
+    if (acceptsViewingOffer(row, payload.text)) {
+      recordInbound(row, payload);
+      const reply = `Great, let's arrange a viewing.${await offerSlots(row)}`;
+      if (row.booking_status === "proposed") row.lead_status = "hot";
+      await deps.upsertLead(row);
+      await sendLogged(row, row.telegram_chat_id, row.contact_key, reply, payload.messageId);
+      return { lead_status: row.lead_status, booking_status: row.booking_status };
+    }
+
     let listings: Listing[] = [];
     try { listings = await deps.readListings(); }
     catch (err) { console.warn(`listings read failed: ${err instanceof Error ? err.message : "unknown error"}`); }
@@ -353,19 +388,7 @@ export function createInboundMessageHandler(deps: InboundDependencies) {
     let finalReply = reply;
     if (row.viewing_intent && hasAllQualifiers(extraction) && row.booking_status !== "requested" &&
         row.booking_status !== "confirmed") {
-      const slots = await tryProposeSlots();
-      if (slots.length) {
-        row.proposed_slots = JSON.stringify(slots);
-        row.booking_status = "proposed";
-        row.viewing_intent = false;
-        finalReply += `\n\nAvailable viewing times (EAT):\n${deps.formatSlotOptions(slots)}\nReply 1, 2, or 3 to request one.`;
-      } else {
-        row.needs_human = true;
-        row.viewing_intent = false;
-        row.follow_up_active = false;
-        row.next_follow_up = "";
-        finalReply += "\n\nThe agent will contact you to arrange a viewing.";
-      }
+      finalReply += await offerSlots(row);
     }
     if (["proposed", "requested", "confirmed"].includes(row.booking_status)) row.lead_status = "hot";
     await deps.upsertLead(row);

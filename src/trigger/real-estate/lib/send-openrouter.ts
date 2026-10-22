@@ -28,7 +28,7 @@ function buildPrompt(params: { text: string; listings: Listing[]; history: Conve
 Reply naturally and briefly. Collect whether the person wants to rent or buy, their budget (UGX), preferred area and bedrooms, and timeline over the conversation. Use the confirmed values below unless the prospect corrects them. Ask only for information still missing. A rental budget is monthly; a purchase budget is a one-time total. Match rental inquiries only to RENT listings and purchase inquiries only to FOR SALE listings. Do not compare monthly rent with a sale price. Only talk about properties in the Listings Feed; never invent listings, prices, availability, fees, or booking confirmation. If a detail is absent, offer to connect them to the agent.
 
 Output: you MUST end with a single JSON object on its own line (no markdown fence) with keys: deal_type ("rent"|"buy"|null), budget_ugx (number|null), area_preference (string|null), bedrooms (number|null), timeline (string|null), listing_id (string|null matching a compatible feed id or null), needs_booking (boolean), prospect_name (string|null). Dates/timelines as short strings like "within 2 weeks" or "next Saturday".
-Set needs_booking=true only when the latest prospect message asks to arrange a viewing. A request is not a confirmed booking.
+Set needs_booking=true only when the latest prospect message asks to arrange a viewing or says yes to your offer of one. A request is not a confirmed booking.
 
 Confirmed values from earlier messages:
 ${JSON.stringify(params.existing)}

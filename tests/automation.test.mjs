@@ -189,6 +189,37 @@ test("a prospect can qualify, request a viewing, and receive the owner's Calenda
   assert.ok(state.sent.some((item) => item.chatId === "prospect-200" && /viewing.*confirmed/i.test(item.text)));
 });
 
+test("a plain 'Yes' to the assistant's viewing offer proposes slots instead of repeating the offer", async () => {
+  const { deps, handle, message, state } = automationFixture();
+  const offer = "Nothing fits your budget exactly; the closest is KISAASI-1. Would you like to arrange a viewing?";
+  deps.qualify = async (payload) => {
+    state.qualifications.push(structuredClone(payload));
+    // Mirrors the free model: it never flags a bare "Yes" as a booking request and repeats its offer.
+    return { reply: offer, extraction: { ...payload.existing, budget_ugx: 300000, area_preference: "Any area",
+      bedrooms: 1, timeline: "anytime", deal_type: "rent", listing_id: "KISAASI-1", needs_booking: false,
+      prospect_name: "Sam" } };
+  };
+
+  await handle(message("prospect-300", "300k 1 bedroom, any area, anytime"));
+  assert.equal(state.sent.at(-1).text, offer);
+  const callsBeforeYes = state.qualifications.length;
+
+  await handle(message("prospect-300", "Yes"));
+  const lead = state.leads.get("telegram:prospect-300");
+  assert.equal(lead.booking_status, "proposed");
+  assert.match(state.sent.at(-1).text, /Reply 1, 2, or 3/);
+  assert.notEqual(state.sent.at(-1).text, offer);
+  assert.equal(state.qualifications.length, callsBeforeYes, "accepting a viewing should not spend an AI call");
+});
+
+test("a 'Yes' that is not answering a viewing offer still goes to the AI", async () => {
+  const { handle, message, state } = automationFixture();
+  await handle(message("prospect-301", "I need a 3 bedroom home in Kisaasi"));
+  await handle(message("prospect-301", "Yes"));
+  assert.equal(state.qualifications.length, 2);
+  assert.equal(state.leads.get("telegram:prospect-301").booking_status, "none");
+});
+
 test("a stopped prospect is opted out and later messages do not call AI", async () => {
   const { handle, message, state } = automationFixture();
   await handle(message("prospect-201", "/start"));
