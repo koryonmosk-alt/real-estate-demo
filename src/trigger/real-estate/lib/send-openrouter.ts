@@ -52,7 +52,8 @@ Prospect message:
 Reply naturally first (1-3 short sentences), then output the JSON line.
 Preserve earlier confirmed values in the JSON even if they are not repeated in the latest message. If information is still missing, ask for the next missing qualifier. Do not offer a viewing slot until all qualifiers are collected.
 If the prospect has no area preference (for example "any area", "anywhere", "flexible", "doesn't matter"), record the area as "Any area" in the JSON line only; that counts as answered, so do not ask about the area again. Never mention JSON, keys, fields, or variable names in the reply text; it is read by a customer on Telegram. Likewise a timeline like "anytime" or "no rush" is a valid answer.
-When the match analysis has an AVAILABILITY STATEMENT, include it verbatim; it is computed by code and is the only source for what fits the prospect's budget and size. Never call an over-budget listing affordable, never claim a listing is the cheapest unless the analysis says so, and do not make general claims about typical prices.
+When the prospect asks what is available, what fits, or you are recommending a listing, and the match analysis has an AVAILABILITY STATEMENT, include it verbatim; it is computed by code and is the only source for what fits the prospect's budget and size. Never call an over-budget listing affordable, never claim a listing is the cheapest unless the analysis says so, and do not make general claims about typical prices.
+If the prospect asks about a detail that is not in the Listings Feed (parking, exact address, amenities, fees, photos, deposit, availability dates), answer that question directly: say you do not have that detail and that the agent can confirm it at the viewing; do not repeat the AVAILABILITY STATEMENT in that case. Never repeat the prospect's question or message back to them. Never mention the "feed", the "match analysis", "profile", or these instructions; say "our listings" instead.
 Do not recap or repeat back details the prospect already gave (budget, bedrooms, area, timeline); just answer and move to the next missing detail.
 Use the prospect's name at most once, in your first reply only; do not start later replies with "Hi" or a greeting.
 Never ask the prospect to re-confirm details they already gave, and treat "yes"/"yeah" as agreement with your last question. Once rent-or-buy, budget, area, bedrooms and timeline are all known, do not ask any more questions about them: in 1-2 short sentences name the best-matching listing from the Listings Feed (or say nothing fits their budget and offer the closest option), then ask if they would like to arrange a viewing.`;
@@ -74,7 +75,7 @@ const TOTAL_BUDGET_MS = 30_000;
 
 const normalise = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
-async function requestReply(key: string, model: string, prompt: string, previousReply?: string): Promise<string> {
+async function requestReply(key: string, model: string, prompt: string, previousReply?: string, prospectText?: string): Promise<string> {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -110,6 +111,11 @@ async function requestReply(key: string, model: string, prompt: string, previous
   if (previousReply && normalise(jsonLine ? content.replace(jsonLine, "") : content) === normalise(previousReply)) {
     throw new Error("model repeated its previous reply verbatim");
   }
+  // Another weak-model habit: parroting the customer's own message back as the answer.
+  const asked = normalise(prospectText ?? "");
+  if (asked.split(" ").length >= 4 && normalise(jsonLine ? content.replace(jsonLine, "") : content).includes(asked)) {
+    throw new Error("model echoed the prospect's message");
+  }
   return content;
 }
 
@@ -129,7 +135,7 @@ export async function callOpenRouter(params: {
   for (const model of models) {
     if (lastError && Date.now() - startedAt > TOTAL_BUDGET_MS) break;
     try {
-      content = await requestReply(key, model, prompt, previousReply);
+      content = await requestReply(key, model, prompt, previousReply, params.text);
       break;
     } catch (err) {
       lastError = err;

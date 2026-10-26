@@ -353,3 +353,23 @@ test("OpenRouter treats a verbatim copy of the previous reply as a failure and t
   assert.deepEqual(tried, ["vendor/copycat:free", "vendor/good:free"]);
   assert.equal(result.reply, "Great, let's pick a time.");
 });
+
+test("OpenRouter treats a reply that parrots the prospect's own message as a failure and tries the next model", async (t) => {
+  setEnv(t, { OPENROUTER_API_KEY: "unit-test-openrouter-key", LLM_MODEL: "vendor/parrot:free,vendor/good:free" });
+  const question = "Does that house have parking and what is the exact address?";
+  const tried = [];
+  t.mock.method(globalThis, "fetch", async (_url, init) => {
+    const model = JSON.parse(init.body).model;
+    tried.push(model);
+    return Response.json({ choices: [{ message: { content: model === "vendor/parrot:free"
+      ? `Good news: the house is available.\n\n${question}\n{}`
+      : "I don't have parking or address details; the agent can confirm them at the viewing." } }] });
+  });
+
+  const result = await callOpenRouter({ text: question, listings: [], history: [], existing: blankExisting });
+  assert.deepEqual(tried, ["vendor/parrot:free", "vendor/good:free"]);
+  assert.match(result.reply, /agent can confirm/);
+
+  const short = await callOpenRouter({ text: "Yes", listings: [], history: [], existing: blankExisting });
+  assert.ok(short.reply);
+});
