@@ -3,15 +3,17 @@ import type { ConversationTurn, Listing, QualifierExtraction } from "./types.js"
 function requireOpenRouterEnv() {
   const key = process.env.OPENROUTER_API_KEY;
   if (!key) throw new Error("OPENROUTER_API_KEY is not set");
-  const model = process.env.LLM_MODEL;
-  if (!model) throw new Error("LLM_MODEL is not set");
-  if (model === "openrouter/free") {
-    throw new Error("LLM_MODEL must name one specific :free model; openrouter/free routes randomly and can pick models that return empty or non-chat replies");
+  const raw = process.env.LLM_MODEL;
+  if (!raw) throw new Error("LLM_MODEL is not set");
+  // Free models get retired without notice, so LLM_MODEL may list several in priority order.
+  const models = raw.split(",").map((value) => value.trim()).filter(Boolean);
+  if (models.includes("openrouter/free")) {
+    throw new Error("LLM_MODEL must name specific :free models; openrouter/free routes randomly and can pick models that return empty or non-chat replies");
   }
-  if (!model.endsWith(":free")) {
+  if (!models.length || models.some((model) => !model.endsWith(":free"))) {
     throw new Error("LLM_MODEL must be a free OpenRouter model for the zero-cost demo");
   }
-  return { key, model };
+  return { key, models };
 }
 
 function buildPrompt(params: { text: string; listings: Listing[]; history: ConversationTurn[]; existing: QualifierExtraction }): string {
@@ -59,15 +61,7 @@ function extractJsonLine(text: string): string | null {
   return m ? m[0] : null;
 }
 
-export async function callOpenRouter(params: {
-  text: string;
-  listings: Listing[];
-  history: ConversationTurn[];
-  existing: QualifierExtraction;
-}): Promise<{ reply: string; extraction: QualifierExtraction }> {
-  const { key, model } = requireOpenRouterEnv();
-  const prompt = buildPrompt(params);
-
+async function requestReply(key: string, model: string, prompt: string): Promise<string> {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -95,6 +89,36 @@ export async function callOpenRouter(params: {
     choices?: Array<{ finish_reason?: string; message?: { content?: string } }>;
   };
   const content = data.choices?.[0]?.message?.content ?? "";
+  const jsonLine = extractJsonLine(content);
+  if (!(jsonLine ? content.replace(jsonLine, "") : content).trim()) {
+    throw new Error(`OpenRouter returned no reply text (finish_reason=${data.choices?.[0]?.finish_reason ?? "unknown"})`);
+  }
+  return content;
+}
+
+export async function callOpenRouter(params: {
+  text: string;
+  listings: Listing[];
+  history: ConversationTurn[];
+  existing: QualifierExtraction;
+}): Promise<{ reply: string; extraction: QualifierExtraction }> {
+  const { key, models } = requireOpenRouterEnv();
+  const prompt = buildPrompt(params);
+
+  let content = "";
+  let lastError: unknown;
+  for (const model of models) {
+    try {
+      content = await requestReply(key, model, prompt);
+      break;
+    } catch (err) {
+      lastError = err;
+      console.warn(`model ${model} failed: ${err instanceof Error ? err.message.slice(0, 200) : "unknown error"}`);
+      // The free-model quota is per account, so trying the next model cannot help.
+      if (err instanceof Error && /free-models-per-day/.test(err.message)) break;
+    }
+  }
+  if (!content) throw lastError instanceof Error ? lastError : new Error("OpenRouter failed");
   const jsonLine = extractJsonLine(content);
 
   let extraction: QualifierExtraction = { ...params.existing, needs_booking: false };
@@ -140,6 +164,5 @@ export async function callOpenRouter(params: {
   }
 
   const reply = (jsonLine ? content.replace(jsonLine, "") : content).trim();
-  if (!reply) throw new Error(`OpenRouter returned no reply text (finish_reason=${data.choices?.[0]?.finish_reason ?? "unknown"})`);
   return { reply, extraction };
 }

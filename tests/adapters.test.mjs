@@ -76,7 +76,42 @@ test("OpenRouter refuses the random free router before calling the provider", as
   const fetchMock = t.mock.method(globalThis, "fetch", async () => { throw new Error("unexpected request"); });
 
   await assert.rejects(callOpenRouter({ text: "Hello", listings: [], history: [], existing: blankExisting }),
-    /one specific :free model/);
+    /specific :free models/);
+  assert.equal(fetchMock.mock.callCount(), 0);
+});
+
+test("OpenRouter falls through to the next listed model when one is retired or unusable", async (t) => {
+  setEnv(t, { OPENROUTER_API_KEY: "unit-test-openrouter-key", LLM_MODEL: "gone/model:free, vendor/empty:free ,vendor/good:free" });
+  const tried = [];
+  t.mock.method(globalThis, "fetch", async (_url, init) => {
+    const model = JSON.parse(init.body).model;
+    tried.push(model);
+    if (model === "gone/model:free") return Response.json({ error: { message: "Provider returned error", code: 404 } }, { status: 404 });
+    if (model === "vendor/empty:free") return Response.json({ choices: [{ message: { content: "" } }] });
+    return Response.json({ choices: [{ message: { content: 'Hello there.\n{"budget_ugx":300000}' } }] });
+  });
+
+  const result = await callOpenRouter({ text: "Hi", listings: [], history: [], existing: blankExisting });
+  assert.deepEqual(tried, ["gone/model:free", "vendor/empty:free", "vendor/good:free"]);
+  assert.equal(result.reply, "Hello there.");
+  assert.equal(result.extraction.budget_ugx, 300000);
+});
+
+test("OpenRouter stops trying more models once the account's free daily quota is spent", async (t) => {
+  setEnv(t, { OPENROUTER_API_KEY: "unit-test-openrouter-key", LLM_MODEL: "vendor/a:free,vendor/b:free" });
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => Response.json(
+    { error: { message: "Rate limit exceeded: free-models-per-day." } }, { status: 429 }));
+
+  await assert.rejects(callOpenRouter({ text: "Hi", listings: [], history: [], existing: blankExisting }),
+    /free-models-per-day/);
+  assert.equal(fetchMock.mock.callCount(), 1);
+});
+
+test("OpenRouter rejects a model list that contains a paid model or the random router", async (t) => {
+  setEnv(t, { OPENROUTER_API_KEY: "unit-test-openrouter-key", LLM_MODEL: "vendor/a:free,vendor/paid" });
+  const fetchMock = t.mock.method(globalThis, "fetch", async () => { throw new Error("unexpected request"); });
+  await assert.rejects(callOpenRouter({ text: "Hi", listings: [], history: [], existing: blankExisting }),
+    /must be a free OpenRouter model/);
   assert.equal(fetchMock.mock.callCount(), 0);
 });
 
