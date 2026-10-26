@@ -28,6 +28,19 @@ export type InboundDependencies = {
 };
 
 const AFFIRMATIVE = /^(yes|yeah|yep|yup|ya|sure|ok|okay|definitely|of course)\b[\s,.!]*(please)?[\s.!]*$/i;
+const AGREEMENT_START = /^(yes|yeah|yep|yup|ya|sure|ok|okay|definitely|of course|please|go ahead|sounds good|that works)\b/i;
+const VIEWING_WORDS = /\b(view|viewing|visit|book|arrange|schedule|inspect)\b/i;
+const NEGATION = /\b(no|not|don'?t|do not|never|cancel|stop|instead|but|actually)\b/i;
+
+// "Yes", "yes please, I would like to view it" and "I'd like to view it" all accept an offer
+// of a viewing; questions and corrections ("ok but what about 2 bedrooms?") do not.
+function acceptsOffer(text: string): boolean {
+  const trimmed = text.trim();
+  if (AFFIRMATIVE.test(trimmed)) return true;
+  const words = trimmed.split(/\s+/).length;
+  if (trimmed.includes("?") || NEGATION.test(trimmed) || words > 12) return false;
+  return VIEWING_WORDS.test(trimmed) || (AGREEMENT_START.test(trimmed) && words <= 4);
+}
 
 export function createInboundMessageHandler(deps: InboundDependencies) {
   const now = deps.now ?? (() => new Date());
@@ -148,7 +161,7 @@ export function createInboundMessageHandler(deps: InboundDependencies) {
   // offer is detected here instead of trusting needs_booking.
   function acceptsViewingOffer(row: LeadRow, text: string): boolean {
     if (["proposed", "requested", "confirmed"].includes(row.booking_status)) return false;
-    if (!AFFIRMATIVE.test(text.trim()) || !hasAllQualifiers(extractionFrom(row))) return false;
+    if (!acceptsOffer(text) || !hasAllQualifiers(extractionFrom(row))) return false;
     const last = historyFrom(row).at(-1);
     return last?.role === "assistant" && /viewing/i.test(last.text) && last.text.trim().endsWith("?");
   }

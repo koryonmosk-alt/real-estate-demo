@@ -336,3 +336,20 @@ test("Telegram polling offset initializes its header and persists only valid off
   assert.equal(calls[1].range, "'TelegramState'!A2:B2");
   await assert.rejects(writeTelegramUpdateOffset(-1), /Invalid Telegram update offset/);
 });
+
+test("OpenRouter treats a verbatim copy of the previous reply as a failure and tries the next model", async (t) => {
+  setEnv(t, { OPENROUTER_API_KEY: "unit-test-openrouter-key", LLM_MODEL: "vendor/copycat:free,vendor/good:free" });
+  const previous = "Would you like to arrange a viewing for UG-R-013?";
+  const tried = [];
+  t.mock.method(globalThis, "fetch", async (_url, init) => {
+    const model = JSON.parse(init.body).model;
+    tried.push(model);
+    return Response.json({ choices: [{ message: { content: model === "vendor/copycat:free"
+      ? `${previous}\n{}` : "Great, let's pick a time." } }] });
+  });
+
+  const result = await callOpenRouter({ text: "Yes", listings: [], history: [
+    { role: "prospect", text: "1 bedroom" }, { role: "assistant", text: previous }], existing: blankExisting });
+  assert.deepEqual(tried, ["vendor/copycat:free", "vendor/good:free"]);
+  assert.equal(result.reply, "Great, let's pick a time.");
+});

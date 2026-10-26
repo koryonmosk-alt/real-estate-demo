@@ -52,7 +52,8 @@ Prospect message:
 Reply naturally first (1-3 short sentences), then output the JSON line.
 Preserve earlier confirmed values in the JSON even if they are not repeated in the latest message. If information is still missing, ask for the next missing qualifier. Do not offer a viewing slot until all qualifiers are collected.
 If the prospect has no area preference (for example "any area", "anywhere", "flexible", "doesn't matter"), record the area as "Any area" in the JSON line only; that counts as answered, so do not ask about the area again. Never mention JSON, keys, fields, or variable names in the reply text; it is read by a customer on Telegram. Likewise a timeline like "anytime" or "no rush" is a valid answer.
-Only call a listing affordable, in budget, or a match if it appears under EXACT MATCHES in the match analysis. If EXACT MATCHES is none, say so plainly in your first sentence, then offer the closest options from the analysis with their exact prices and ids, never calling an over-budget listing affordable and never claiming one is the cheapest unless the analysis shows it. Do not make general claims about typical prices.
+When the match analysis has an AVAILABILITY STATEMENT, include it verbatim; it is computed by code and is the only source for what fits the prospect's budget and size. Never call an over-budget listing affordable, never claim a listing is the cheapest unless the analysis says so, and do not make general claims about typical prices.
+Do not recap or repeat back details the prospect already gave (budget, bedrooms, area, timeline); just answer and move to the next missing detail.
 Use the prospect's name at most once, in your first reply only; do not start later replies with "Hi" or a greeting.
 Never ask the prospect to re-confirm details they already gave, and treat "yes"/"yeah" as agreement with your last question. Once rent-or-buy, budget, area, bedrooms and timeline are all known, do not ask any more questions about them: in 1-2 short sentences name the best-matching listing from the Listings Feed (or say nothing fits their budget and offer the closest option), then ask if they would like to arrange a viewing.`;
 }
@@ -71,7 +72,9 @@ function extractJsonLine(text: string): string | null {
 const MODEL_TIMEOUT_MS = 15_000;
 const TOTAL_BUDGET_MS = 30_000;
 
-async function requestReply(key: string, model: string, prompt: string): Promise<string> {
+const normalise = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+async function requestReply(key: string, model: string, prompt: string, previousReply?: string): Promise<string> {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
@@ -103,6 +106,10 @@ async function requestReply(key: string, model: string, prompt: string): Promise
   if (!(jsonLine ? content.replace(jsonLine, "") : content).trim()) {
     throw new Error(`OpenRouter returned no reply text (finish_reason=${data.choices?.[0]?.finish_reason ?? "unknown"})`);
   }
+  // Weak models sometimes answer "yes" by copying their own last message from the history.
+  if (previousReply && normalise(jsonLine ? content.replace(jsonLine, "") : content) === normalise(previousReply)) {
+    throw new Error("model repeated its previous reply verbatim");
+  }
   return content;
 }
 
@@ -114,6 +121,7 @@ export async function callOpenRouter(params: {
 }): Promise<{ reply: string; extraction: QualifierExtraction }> {
   const { key, models } = requireOpenRouterEnv();
   const prompt = buildPrompt(params);
+  const previousReply = params.history.filter((turn) => turn.role === "assistant").at(-1)?.text;
 
   let content = "";
   let lastError: unknown;
@@ -121,7 +129,7 @@ export async function callOpenRouter(params: {
   for (const model of models) {
     if (lastError && Date.now() - startedAt > TOTAL_BUDGET_MS) break;
     try {
-      content = await requestReply(key, model, prompt);
+      content = await requestReply(key, model, prompt, previousReply);
       break;
     } catch (err) {
       lastError = err;

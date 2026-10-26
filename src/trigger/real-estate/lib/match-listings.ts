@@ -73,13 +73,23 @@ export function analyseMatches(listings: Listing[], existing: QualifierExtractio
   lines.push(`EXACT MATCHES (the only listings that fit both budget and bedrooms): ${
     exact.length ? exact.map((l) => describe(l, budget)).join("; ") : "none"}.`);
 
-  if (!exact.length && budget !== null) {
+  let say = "";
+  if (exact.length && (budget !== null || bedrooms !== null)) {
+    say = `Good news: ${describe(exact[0], budget)}${exact[1] ? `. Another option is ${describe(exact[1], budget)}` : ""}.`;
+  } else if (!exact.length && budget !== null) {
     const above = byBedrooms.filter((l) => l.price_ugx > budget).sort((a, b) => a.price_ugx - b.price_ugx).slice(0, 3);
     const within = pool.filter((l) => l.price_ugx <= budget && (bedrooms === null || l.bedrooms !== bedrooms))
       .sort((a, b) => Math.abs(a.bedrooms - (bedrooms ?? 0)) - Math.abs(b.bedrooms - (bedrooms ?? 0)) ||
         b.price_ugx - a.price_ugx).slice(0, 3);
     if (above.length) lines.push(`Cheapest with the right bedrooms but over budget: ${above.map((l) => describe(l, budget)).join("; ")}.`);
     if (within.length) lines.push(`Within budget but a different size: ${within.map((l) => describe(l, budget)).join("; ")}.`);
+    const size = bedrooms === null ? "" : `${bedLabel(bedrooms)} `;
+    say = `Unfortunately no ${size}listing fits UGX ${ugx(budget)}.` +
+      `${above[0] ? ` The cheapest ${size}option is ${describe(above[0], budget)}.` : ""}` +
+      `${within[0] ? ` Within your budget there is ${describe(within[0], budget)}.` : ""}`;
+  }
+  if (say) {
+    lines.push(`AVAILABILITY STATEMENT (include this verbatim, with at most a short lead-in; never contradict it): ${say}`);
   }
   return lines.join("\n");
 }

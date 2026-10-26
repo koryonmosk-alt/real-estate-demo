@@ -212,6 +212,45 @@ test("a plain 'Yes' to the assistant's viewing offer proposes slots instead of r
   assert.equal(state.qualifications.length, callsBeforeYes, "accepting a viewing should not spend an AI call");
 });
 
+async function offerFixture(prospect) {
+  const fixture = automationFixture();
+  const offer = "The closest is KISAASI-1 at 400,000. Would you like to arrange a viewing?";
+  fixture.deps.qualify = async (payload) => {
+    fixture.state.qualifications.push(structuredClone(payload));
+    return { reply: offer, extraction: { ...payload.existing, budget_ugx: 450000, area_preference: "Any area",
+      bedrooms: 1, timeline: "next week", deal_type: "rent", listing_id: "KISAASI-1", needs_booking: false,
+      prospect_name: "Sam" } };
+  };
+  await fixture.handle(fixture.message(prospect, "1 bedroom, 450k, any area, next week"));
+  return fixture;
+}
+
+test("natural ways of accepting a viewing offer propose slots without an AI call", async () => {
+  const phrases = ["Yes please, I would like to view it", "yeah sure", "I would like to view it", "Ok book it",
+    "Yes, let's arrange it", "sounds good"];
+  for (const [index, phrase] of phrases.entries()) {
+    const prospect = `prospect-31${index}`;
+    const fixture = await offerFixture(prospect);
+    const calls = fixture.state.qualifications.length;
+    await fixture.handle(fixture.message(prospect, phrase));
+    assert.equal(fixture.state.leads.get(`telegram:${prospect}`).booking_status, "proposed", phrase);
+    assert.equal(fixture.state.qualifications.length, calls, `${phrase} should not spend an AI call`);
+  }
+});
+
+test("questions, corrections and refusals after a viewing offer still go to the AI", async () => {
+  const phrases = ["Ok, what is the price?", "yes but I need 2 bedrooms", "No thanks", "Actually can I see something cheaper",
+    "I would like to view it but not on weekends"];
+  for (const [index, phrase] of phrases.entries()) {
+    const prospect = `prospect-32${index}`;
+    const fixture = await offerFixture(prospect);
+    const calls = fixture.state.qualifications.length;
+    await fixture.handle(fixture.message(prospect, phrase));
+    assert.equal(fixture.state.qualifications.length, calls + 1, phrase);
+    assert.notEqual(fixture.state.leads.get(`telegram:${prospect}`).booking_status, "proposed", phrase);
+  }
+});
+
 test("a 'Yes' that is not answering a viewing offer still goes to the AI", async () => {
   const { handle, message, state } = automationFixture();
   await handle(message("prospect-301", "I need a 3 bedroom home in Kisaasi"));

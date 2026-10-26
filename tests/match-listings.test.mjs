@@ -98,3 +98,16 @@ test("facts the prospect states override the model, and a phone number is not a 
   assert.deepEqual(applyStatedFacts(base, "yes please", listings), base);
   assert.equal(parseBudget("call me on 0772123456"), null);
 });
+
+test("the availability statement is decided by code: exact match wins, otherwise an honest no", () => {
+  const exact = analyseMatches(listings, { ...none, deal_type: "rent", bedrooms: 1 }, "budget 450k");
+  assert.match(exact, /AVAILABILITY STATEMENT[^:]*: Good news: R-2 1-bedroom in Mbale at UGX 400,000/);
+  assert.doesNotMatch(exact, /Unfortunately/);
+
+  const nothing = analyseMatches(listings, { ...none, deal_type: "rent", bedrooms: 2 }, "budget 500k");
+  assert.match(nothing, /Unfortunately no 2-bedroom listing fits UGX 500,000\. The cheapest 2-bedroom option is R-4/);
+  assert.match(nothing, /Within your budget there is R-2 1-bedroom in Mbale/);
+
+  const unknownBudget = analyseMatches(listings, { ...none, deal_type: "rent" }, "hello");
+  assert.doesNotMatch(unknownBudget, /AVAILABILITY STATEMENT/);
+});
