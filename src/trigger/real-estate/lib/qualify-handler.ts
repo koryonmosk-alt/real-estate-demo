@@ -23,6 +23,7 @@ export function createQualifyLeadHandler(deps: QualificationDependencies) {
         prospect_name: payload.existing.prospect_name ?? payload.fromName ?? null },
     });
 
+    const startedAt = Date.now();
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
         const { reply, extraction } = await deps.callOpenRouter({
@@ -37,8 +38,9 @@ export function createQualifyLeadHandler(deps: QualificationDependencies) {
         console.warn(`qualify attempt ${attempt + 1} failed: ${message.slice(0, 300)}`);
         // A spent daily quota cannot recover on retry, so don't waste a call or the customer's time.
         if (/free-models-per-day/.test(message)) return fallback(DAILY_LIMIT_REPLY);
-        if (attempt === 0) await new Promise((resolve) => setTimeout(resolve, 1500));
-        else return fallback(BUSY_REPLY);
+        // A second pass after a slow failure could push the 60s task limit; answer with the fallback instead.
+        if (attempt === 1 || Date.now() - startedAt > 20_000) return fallback(BUSY_REPLY);
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
     }
     throw new Error("qualify-lead failed");

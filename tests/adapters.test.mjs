@@ -141,8 +141,23 @@ test("OpenRouter prompt treats 'any area' as answered and forbids re-confirming 
   });
 
   await callOpenRouter({ text: "Any area it doesnt matter", listings: [], history: [], existing: blankExisting });
-  assert.match(prompt, /set area_preference to "Any area"/);
+  assert.match(prompt, /record the area as "Any area"/);
   assert.match(prompt, /Never ask the prospect to re-confirm/);
+});
+
+test("OpenRouter fills qualifiers from the prospect message when the model omits or garbles its JSON line", async (t) => {
+  setEnv(t, { OPENROUTER_API_KEY: "unit-test-openrouter-key", LLM_MODEL: "vendor/model:free" });
+  const listing = { listing_id: "UG-R-013", title: "Mbale 1-bedroom", area: "Mbale", bedrooms: 1, bathrooms: 1,
+    price_ugx: 400000, currency: "UGX", property_type: "apartment", status: "available", listing_url: "", notes: "",
+    photo_urls: [], deal_type: "rent" };
+  t.mock.method(globalThis, "fetch", async () => Response.json({ choices: [{ message: { content:
+    ["JSON:", "The closest is UG-R-013 at UGX 400,000.", "```json", "```"].join("\n") } }] }));
+
+  const result = await callOpenRouter({ text: "I want to rent a 1 bedroom, budget 500k, any area, moving next week",
+    listings: [listing], history: [], existing: blankExisting });
+  assert.equal(result.reply, "The closest is UG-R-013 at UGX 400,000.");
+  assert.deepEqual({ ...result.extraction, prospect_name: null }, { deal_type: "rent", budget_ugx: 500000, bedrooms: 1,
+    timeline: "next week", area_preference: "Any area", listing_id: "UG-R-013", needs_booking: false, prospect_name: null });
 });
 
 test("OpenRouter preserves qualifiers and rejects an incompatible listing from the feed", async (t) => {

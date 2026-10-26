@@ -1,4 +1,6 @@
 import type { ConversationTurn, Listing, QualifierExtraction } from "./types.js";
+import { analyseMatches } from "./match-listings.js";
+import { applyStatedFacts } from "./extract-qualifiers.js";
 
 function requireOpenRouterEnv() {
   const key = process.env.OPENROUTER_API_KEY;
@@ -41,12 +43,16 @@ ${history || "(first message)"}
 Listings Feed (only these are answerable):
 ${feed || "(no available listings — deflect to human)"}
 
+Match analysis (computed by code from the feed above; trust it over your own arithmetic):
+${analyseMatches(params.listings, params.existing, params.text)}
+
 Prospect message:
 """${params.text}"""
 
 Reply naturally first (1-3 short sentences), then output the JSON line.
 Preserve earlier confirmed values in the JSON even if they are not repeated in the latest message. If information is still missing, ask for the next missing qualifier. Do not offer a viewing slot until all qualifiers are collected.
-If the prospect has no area preference (for example "any area", "anywhere", "flexible", "doesn't matter"), set area_preference to "Any area"; that counts as answered, so do not ask about the area again. Likewise a timeline like "anytime" or "no rush" is a valid answer.
+If the prospect has no area preference (for example "any area", "anywhere", "flexible", "doesn't matter"), record the area as "Any area" in the JSON line only; that counts as answered, so do not ask about the area again. Never mention JSON, keys, fields, or variable names in the reply text; it is read by a customer on Telegram. Likewise a timeline like "anytime" or "no rush" is a valid answer.
+Only call a listing affordable, in budget, or a match if it appears under EXACT MATCHES in the match analysis. If EXACT MATCHES is none, say so plainly in your first sentence, then offer the closest options from the analysis with their exact prices and ids, never calling an over-budget listing affordable and never claiming one is the cheapest unless the analysis shows it. Do not make general claims about typical prices.
 Use the prospect's name at most once, in your first reply only; do not start later replies with "Hi" or a greeting.
 Never ask the prospect to re-confirm details they already gave, and treat "yes"/"yeah" as agreement with your last question. Once rent-or-buy, budget, area, bedrooms and timeline are all known, do not ask any more questions about them: in 1-2 short sentences name the best-matching listing from the Listings Feed (or say nothing fits their budget and offer the closest option), then ask if they would like to arrange a viewing.`;
 }
@@ -60,6 +66,10 @@ function extractJsonLine(text: string): string | null {
   const m = text.match(/\{[\s\S]*\}/);
   return m ? m[0] : null;
 }
+
+// Trigger.dev tasks are capped at 60s, so a stalled free model must not eat the whole run.
+const MODEL_TIMEOUT_MS = 15_000;
+const TOTAL_BUDGET_MS = 30_000;
 
 async function requestReply(key: string, model: string, prompt: string): Promise<string> {
   const res = await fetch("https://openrouter.ai/api/v1/chat/completions", {
@@ -77,7 +87,7 @@ async function requestReply(key: string, model: string, prompt: string): Promise
       max_tokens: 1200,
       reasoning: { enabled: false },
     }),
-    signal: AbortSignal.timeout(45_000),
+    signal: AbortSignal.timeout(MODEL_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -107,7 +117,9 @@ export async function callOpenRouter(params: {
 
   let content = "";
   let lastError: unknown;
+  const startedAt = Date.now();
   for (const model of models) {
+    if (lastError && Date.now() - startedAt > TOTAL_BUDGET_MS) break;
     try {
       content = await requestReply(key, model, prompt);
       break;
@@ -163,6 +175,17 @@ export async function callOpenRouter(params: {
     }
   }
 
-  const reply = (jsonLine ? content.replace(jsonLine, "") : content).trim();
+  extraction = applyStatedFacts(extraction, params.text, params.listings);
+
+  const reply = (jsonLine ? content.replace(jsonLine, "") : content)
+    .split("\n")
+    .filter((line) => !/^\s*(?:```(?:json)?|json\s*:?|extraction\s*:?)\s*$/i.test(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  if (!extraction.listing_id) {
+    const mentioned = params.listings.find((l) => l.status === "available" && reply.includes(l.listing_id));
+    if (mentioned) extraction = { ...extraction, listing_id: mentioned.listing_id };
+  }
   return { reply, extraction };
 }
